@@ -101,7 +101,8 @@ def save_high_score(path, map_label, score, time_sec):
 
 def build_scoreboard_lines(rows, current_map, limit=10):
     lines = []
-    header = f"{cfg.COLOR_HUD_LABEL}Top {limit} — {current_map}{cfg.COLOR_RESET}"
+    display_name = current_map[:-4] if isinstance(current_map, str) and current_map.lower().endswith(".map") else current_map
+    header = f"{cfg.COLOR_HUD_LABEL}Top {limit} — {display_name}{cfg.COLOR_RESET}"
     lines.append(header)
     filtered = [r for r in rows if r.get("map", "Empty map") == current_map]
     if not filtered:
@@ -153,7 +154,9 @@ def draw_menu(options, idx, preview_grid=None):
     print()
     for i, name in enumerate(options):
         cursor = f"{cfg.COLOR_TITLE_ACCENT}>{cfg.COLOR_RESET}" if i == idx else " "
-        print(f"{cursor} {name}")
+        display = name[:-4] if name.lower().endswith(".map") else name
+        print(f"{cursor} {display}")
+
     print()
 
     # Right column: Top 10 highscores (per current map)
@@ -163,7 +166,7 @@ def draw_menu(options, idx, preview_grid=None):
 
     if preview_grid:
         # Render preview + scoreboard side by side
-        combined = side_by_side([f"{cfg.COLOR_HUD_LABEL}Preview:{cfg.COLOR_RESET}"] + preview_grid, [""] + right_col, gap=6)
+        combined = side_by_side([f"{cfg.COLOR_HUD_LABEL}Preview:{cfg.COLOR_RESET}"] + preview_grid, right_col, gap=6)
         for line in combined:
             print(line)
     else:
@@ -483,7 +486,20 @@ def draw_game(px, py, attacks, score, elapsed, coin_pos, walls,
              f"damage {cfg.COLOR_HUD_VALUE}{fmt_sec(damage_dur)}{cfg.COLOR_RESET}")
     prob  = f"{cfg.COLOR_HUD_LABEL}{cfg.MULTI_LABEL}:{cfg.COLOR_RESET} {cfg.COLOR_HUD_VALUE}{int(multi_prob*100)}%{cfg.COLOR_RESET}"
     lines.append(header_line(speed, prob))
-    lines.append(f"{cfg.COLOR_MULTI_BANNER}{cfg.MULTI_BANNER_TEXT}{cfg.COLOR_RESET}" if multi_active else "")
+
+    # ===== Bandeau d’état de l’attaque =====
+    # Calcule sur la frame courante : nb d'attaques non vides dans `attacks`
+    non_empty = sum(1 for a in attacks if a)
+    if non_empty > 1:
+        # Multi-attaque : bandeau coloré d’origine
+        banner = f"{cfg.COLOR_MULTI_BANNER}{cfg.MULTI_BANNER_TEXT}{cfg.COLOR_RESET}"
+    else:
+        # Attaque simple : bandeau gris "Normal attack"
+        dim = "\x1b[90m"  # gris (ANSI)
+        normal_text = getattr(cfg, "NORMAL_BANNER_TEXT", "----------")
+        banner = f"{dim}{normal_text}{cfg.COLOR_RESET}"
+    lines.append(banner)
+    # =======================================
 
     view_w = GRID_W + (2 if cfg.BORDER_ENABLED else 0)
     view_h = GRID_H + (2 if cfg.BORDER_ENABLED else 0)
@@ -502,7 +518,7 @@ def draw_game(px, py, attacks, score, elapsed, coin_pos, walls,
         else:
             y = ry - (1 if cfg.BORDER_ENABLED else 0)
             for rx in range(view_w):
-                if cfg.BORDER_ENABLED and (rx == 0 or rx == view_w - 1):
+                if cfg.BORDER_ENABLED and (rx == 0 or rx == view_h - 1):
                     row_cells.append(f"{cfg.COLOR_WALL}{cfg.BORDER_CHAR}{cfg.COLOR_RESET}")
                 else:
                     x = rx - (1 if cfg.BORDER_ENABLED else 0)
@@ -715,6 +731,7 @@ def run_game(walls, start, attack_patterns, map_label):
             else:
                 to_draw = attacks_wave_render(current_attacks, phase, phase_elapsed)
 
+            # (On peut laisser multi_active tel quel; l'affichage est basé sur `attacks` dans draw_game)
             draw_game(px, py, to_draw, score, elapsed, coin_pos, walls,
                       idle_dur, warning_dur, damage_dur, multi_prob, multi_active)
 

@@ -41,6 +41,7 @@ SPEED_LABEL       = "Speed"
 MULTI_LABEL       = "Multi%"
 SCORE_LABEL       = "Score"
 TIME_LABEL        = "Time"
+NORMAL_BANNER_TEXT = "▶ Normal attack "
 MULTI_BANNER_TEXT = "▶ Multi-attacks!"
 
 # HUD side layout (relative to inner rows 0..9)
