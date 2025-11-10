@@ -24,6 +24,19 @@ def enable_vt_mode():
         if kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
             kernel32.SetConsoleMode(handle, mode.value | 0x0004)
 
+ESC = "\x1b"
+
+def enter_alt_screen():
+    # alternate screen + hide cursor + home + clear once
+    sys.stdout.write("\x1b[?1049h\x1b[?25l\x1b[H\x1b[2J")
+    sys.stdout.flush()
+
+def exit_alt_screen():
+    # show cursor + back to primary screen
+    sys.stdout.write("\x1b[?25h\x1b[?1049l")
+    sys.stdout.flush()
+
+
 def clear():
     os.system('cls' if os.name == 'nt' else 'clear')
 
@@ -451,35 +464,31 @@ def fmt_sec(s): return f"{s:.1f}s"
 
 def draw_game(px, py, attacks, score, elapsed, coin_pos, walls,
               idle_dur, warning_dur, damage_dur, multi_prob, multi_active):
-    clear()
+    # clear()  # ENLEVER ceci
 
-    # Accentuated header (title emphasized)
+    lines = []
+
     title_bar = f"{cfg.COLOR_TITLE}{cfg.TITLE_TEXT}{cfg.COLOR_RESET}"
     underline = f"{cfg.COLOR_TITLE_ACCENT}{'═'*len(cfg.TITLE_TEXT)}{cfg.COLOR_RESET}"
-    print(title_bar)
-    print(underline)
     hint = f"{cfg.COLOR_HUD_LABEL}{cfg.CONTROL_HINT}{cfg.COLOR_RESET}"
-    print(hint)
 
-    # Next line: speed + probability
+    # On remplit la liste 'lines' au lieu de print()
+    lines.append(title_bar)
+    lines.append(underline)
+    lines.append(hint)
+
     speed = (f"{cfg.COLOR_HUD_LABEL}{cfg.SPEED_LABEL}:{cfg.COLOR_RESET} "
              f"idle {cfg.COLOR_HUD_VALUE}{fmt_sec(idle_dur)}{cfg.COLOR_RESET} • "
              f"warning {cfg.COLOR_HUD_VALUE}{fmt_sec(warning_dur)}{cfg.COLOR_RESET} • "
              f"damage {cfg.COLOR_HUD_VALUE}{fmt_sec(damage_dur)}{cfg.COLOR_RESET}")
     prob  = f"{cfg.COLOR_HUD_LABEL}{cfg.MULTI_LABEL}:{cfg.COLOR_RESET} {cfg.COLOR_HUD_VALUE}{int(multi_prob*100)}%{cfg.COLOR_RESET}"
-    print(header_line(speed, prob))
+    lines.append(header_line(speed, prob))
+    lines.append(f"{cfg.COLOR_MULTI_BANNER}{cfg.MULTI_BANNER_TEXT}{cfg.COLOR_RESET}" if multi_active else "")
 
-    # Multi banner aligned left (dedicated line)
-    print(f"{cfg.COLOR_MULTI_BANNER}{cfg.MULTI_BANNER_TEXT}{cfg.COLOR_RESET}" if multi_active else "")
-
-    # Inner border around the grid
     view_w = GRID_W + (2 if cfg.BORDER_ENABLED else 0)
     view_h = GRID_H + (2 if cfg.BORDER_ENABLED else 0)
-
-    # Merge attacks (inner coords)
     layer = merged_cells(attacks)
 
-    # Side lines (Score/Time) on rows 5/6 (offset if border)
     side_gap = cfg.SIDE_GAP_SPACES
     side_row_score = (1 if cfg.BORDER_ENABLED else 0) + cfg.SIDE_ROW_SCORE_INDEX
     side_row_time  = (1 if cfg.BORDER_ENABLED else 0) + cfg.SIDE_ROW_TIME_INDEX
@@ -487,7 +496,6 @@ def draw_game(px, py, attacks, score, elapsed, coin_pos, walls,
     for ry in range(view_h):
         row_cells = []
 
-        # Horizontal border lines
         if cfg.BORDER_ENABLED and (ry == 0 or ry == view_h - 1):
             row_cells = [f"{cfg.COLOR_WALL}{cfg.BORDER_CHAR}{cfg.COLOR_RESET}"] * view_w
             row_text = " ".join(row_cells)
@@ -495,24 +503,21 @@ def draw_game(px, py, attacks, score, elapsed, coin_pos, walls,
             y = ry - (1 if cfg.BORDER_ENABLED else 0)
             for rx in range(view_w):
                 if cfg.BORDER_ENABLED and (rx == 0 or rx == view_w - 1):
-                    # Vertical border columns
                     row_cells.append(f"{cfg.COLOR_WALL}{cfg.BORDER_CHAR}{cfg.COLOR_RESET}")
                 else:
                     x = rx - (1 if cfg.BORDER_ENABLED else 0)
                     here = (x, y)
 
-                    # 1) Internal wall: absolute priority
                     if here in walls:
                         row_cells.append(f"{cfg.COLOR_WALL}{cfg.WALL_CHAR}{cfg.COLOR_RESET}")
                         continue
 
-                    # 2) Pattern (warning/damage) with special tint if overlapping player/coin
                     in_attack = here in layer
                     if in_attack:
-                        ch = layer[here]  # '!' or 'X'
-                        if here == (px, py):      # player overlap
+                        ch = layer[here]
+                        if here == (px, py):
                             row_cells.append(f"{cfg.COLOR_PLAYER}{ch}{cfg.COLOR_RESET}")
-                        elif here == coin_pos:    # coin overlap
+                        elif here == coin_pos:
                             row_cells.append(f"{cfg.COLOR_COIN}{ch}{cfg.COLOR_RESET}")
                         else:
                             row_cells.append(
@@ -521,7 +526,6 @@ def draw_game(px, py, attacks, score, elapsed, coin_pos, walls,
                                 f"{cfg.COLOR_DAMAGE}{cfg.ATTACK_DAMAGE_CHAR}{cfg.COLOR_RESET}"
                             )
                     else:
-                        # 3) Player / Coin / Empty
                         if here == (px, py):
                             row_cells.append(f"{cfg.COLOR_PLAYER}{cfg.PLAYER_CHAR}{cfg.COLOR_RESET}")
                         elif here == coin_pos:
@@ -531,14 +535,24 @@ def draw_game(px, py, attacks, score, elapsed, coin_pos, walls,
 
             row_text = " ".join(row_cells)
 
-        # Lateral HUD (score/time) — rows 5 & 6 of the map
         if ry == side_row_score:
             row_text += " " * side_gap + f"{cfg.COLOR_HUD_VALUE}{cfg.SCORE_LABEL}:{cfg.COLOR_RESET} {cfg.COLOR_COIN}{score}{cfg.COLOR_RESET}"
         elif ry == side_row_time:
             row_text += " " * side_gap + f"{cfg.COLOR_HUD_VALUE}{cfg.TIME_LABEL}:{cfg.COLOR_RESET} {int(elapsed)}s"
 
-        print(row_text)
-    print()
+        lines.append(row_text)
+
+    lines.append("")  # print() final blank line
+
+    # ==== ÉCRITURE ATOMIQUE DE LA FRAME ====
+    frame = "\n".join(lines)
+
+    # Curseur en haut puis écrire la frame, puis nettoyer le reste de l'écran
+    sys.stdout.write("\x1b[H")
+    sys.stdout.write(frame)
+    sys.stdout.write("\x1b[J")
+    sys.stdout.flush()
+
 
 def handle_input(px, py, walls):
     if msvcrt.kbhit():
@@ -739,25 +753,19 @@ def main():
     walls, start, w, h, label = select_map()
     GRID_W, GRID_H = w, h
 
-    # Load free patterns (folder attacks/) — required
     attack_patterns = load_attack_patterns(cfg.ATTACKS_DIR)
     if not attack_patterns:
         clear()
-        print(f"{cfg.COLOR_DAMAGE}No attacks found.{cfg.COLOR_RESET}")
-        print(f"Add at least one pattern file to the folder "
-              f"{cfg.COLOR_HUD_VALUE}{cfg.ATTACKS_DIR}{cfg.COLOR_RESET} "
-              f"(digits 1..9 = wave order; other non-space = wave 1).")
-        print("Example:")
-        print("  333")
-        print("32223")
-        print("32123")
-        print("32223")
-        print("  333")
-        print("\nPress any key to quit...")
-        msvcrt.getch()
+        print(f"{cfg.COLOR_ERROR}Aucune attaque trouvée dans '{cfg.ATTACKS_DIR}'.{cfg.COLOR_RESET}")
+        print(f"{cfg.COLOR_HINT}Ajoute au moins un fichier .txt avec une forme d'attaque.{cfg.COLOR_RESET}")
+        input(f"\n{cfg.COLOR_HINT}Appuie sur Entrée pour quitter...{cfg.COLOR_RESET}")
         return
 
-    run_game(walls, start, attack_patterns, label)
+    try:
+        enter_alt_screen()
+        run_game(walls, start, attack_patterns, label)
+    finally:
+        exit_alt_screen()
 
 if __name__ == "__main__":
     main()
